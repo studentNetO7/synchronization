@@ -4,11 +4,38 @@ public class Main {
     public static final Map<Integer, Integer> sizeToFreq = new HashMap<>();
 
     public static void main(String[] args) throws InterruptedException {
-        int numOfThreads = 1000;
-        int lengthOfRoute = 100;
+        int numOfThreads = 100;
+        int lengthOfRoute = 10;
         String letters = "RLRFR";
         List<Thread> threads = new ArrayList<>();
-        // Создаем потоки и их логику
+        // Создаем поток для вывода на экран лидера
+        Thread leaderThread = new Thread(() -> {
+            while (!Thread.interrupted()) { // Бесконечный цикл, пока поток не прерван
+                synchronized (sizeToFreq) {
+                    try {
+                        sizeToFreq.wait();  // Ожидаем сигнала от других потоков
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();  // Прерывание потока
+                    }
+                }
+                // Анализируем и изымаем макс.значение map
+                Map.Entry<Integer, Integer> maxEntry = sizeToFreq.entrySet()
+                        .stream()
+                        .max(Map.Entry.comparingByValue()) // метод max возвращает Optional
+                        .orElseThrow(() -> new NoSuchElementException("Мапа пуста")); // поэтому используем orElseThrow(), чтобы безопасно извлечь результат.
+                System.out.println("Самое частое количество повторений: " + maxEntry.getKey() + " (встретилось " + maxEntry.getValue() + " раз(а)");
+                // Выводим на печать частоты других значений
+                System.out.println("Другие размеры:");
+                sizeToFreq.entrySet()
+                        .stream()
+                        .filter(entry -> !entry.equals(maxEntry)) // исключаем запись с максимальным значением
+                        .sorted(Map.Entry.comparingByKey()) // сортируем по ключу
+                        .forEach(entry -> System.out.println("- " + entry.getKey() + " (" + entry.getValue() + " раз(а))"));
+            }
+        });
+        leaderThread.start(); // запуск потока
+
+        // Создаем потоки генерации маршрутов и их логику
         for (int i = 0; i < numOfThreads; i++) {
             Thread thread = new Thread(() -> {
                 for (int j = 0; j < 100; j++) {
@@ -16,6 +43,7 @@ public class Main {
                     int letterR = counter(route); // считаем кол-во букв 'R'
                     synchronized (sizeToFreq) { // синхронизируем доступ к map
                         sizeToFreq.put(letterR, sizeToFreq.getOrDefault(letterR, 0) + 1);//кладем в map ключ(кол-во букв R)-значение(кол-во строк с этим кол-вом букв R), увеличивая на 1
+                        sizeToFreq.notify();
                     }
                 }
             });
@@ -26,23 +54,10 @@ public class Main {
         for (Thread thread : threads) {
             thread.join();
         }
-        // Анализируем и изымаем макс.значение map
-        Map.Entry<Integer, Integer> maxEntry = sizeToFreq.entrySet()
-                .stream()
-                .max(Map.Entry.comparingByValue()) // метод max возвращает Optional
-                .orElseThrow(() -> new NoSuchElementException("Мапа пуста")); // поэтому используем orElseThrow(), чтобы безопасно извлечь результат.
-        System.out.println("Самое частое количество повторений: " + maxEntry.getKey() + " (встретилось " + maxEntry.getValue() + " раз(а)");
-
-        // Выводим на печать частоты других значений
-        System.out.println("Другие размеры:");
-        sizeToFreq.entrySet()
-                .stream()
-                .filter(entry -> !entry.equals(maxEntry)) // исключаем запись с максимальным значением
-                .sorted(Map.Entry.comparingByKey()) // сортируем по ключу
-                .forEach(entry -> System.out.println("- " + entry.getKey() + " (" + entry.getValue() + " раз(а))"));
-
+        //
+        leaderThread.interrupt();
+        leaderThread.join();
     }
-
     public static String generateRoute(String letters, int length) {
         Random random = new Random();
         StringBuilder route = new StringBuilder();
